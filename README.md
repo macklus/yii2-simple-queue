@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 Yii simple queue worker
 =======================
 Yii2 extension to provide SQL based queue worker
