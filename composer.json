@@ -1,0 +1,21 @@
+{
+    "name": "macklus/yii2-simple-queue",
+    "description": "Yii2 extension to provide SQL based queue worker",
+    "type": "yii2-extension",
+    "keywords": ["yii2","extension","queue"],
+    "license": "GPL-3.0+",
+    "authors": [
+        {
+            "name": "José Pedro Andrés",
+            "email": "macklus@debianitas.net"
+        }
+    ],
+    "require": {
+        "yiisoft/yii2": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "macklus\\SimpleQueue\\": ""
+        }
+    }
+}
