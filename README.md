@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 Yii simple queue worker
 =======================
 Yii2 extension to provide SQL based queue worker
@@ -28,4 +29,3 @@ Usage
 Once the extension is installed, simply use it in your code by  :
 
 ```php
-<?= \macklus\SimpleQueue\AutoloadExample::widget(); ?>```
