@@ -1,6 +1,6 @@
 <?php
 
-namespace macklus\SimpleQueue;
+namespace macklus\SimpleQueue\models;
 
 use Yii;
 
@@ -11,7 +11,7 @@ use Yii;
  * @property string $queue
  * @property string $data
  * @property string $state
- * @property integer $pri
+ * @property integer $priority
  * @property string $ready
  * @property string $start
  * @property string $end
@@ -19,12 +19,17 @@ use Yii;
 class Queue extends \yii\db\ActiveRecord
 {
 
+    const STATUS_WAIT = 'WAIT';
+    const STATUS_READY = 'READY';
+    const STATUS_WORKING = 'WORKING';
+    const STATUS_ENDED = 'ENDED';
+
     /**
      * @inheritdoc
      */
     public static function tableName()
     {
-        return '{{%queueTable}}';
+        return '{{%simpleQueue}}';
     }
 
     /**
@@ -35,7 +40,7 @@ class Queue extends \yii\db\ActiveRecord
         return [
             [['queue'], 'required'],
             [['data'], 'string'],
-            [['pri'], 'integer'],
+            [['priority'], 'integer'],
             [['ready', 'start', 'end'], 'safe'],
             [['queue', 'state'], 'string', 'max' => 255],
         ];
@@ -51,10 +56,19 @@ class Queue extends \yii\db\ActiveRecord
             'queue' => Yii::t('queue', 'Queue'),
             'data' => Yii::t('queue', 'Data'),
             'state' => Yii::t('queue', 'State'),
-            'pri' => Yii::t('queue', 'Pri'),
+            'priority' => Yii::t('queue', 'Priority'),
             'ready' => Yii::t('queue', 'Ready'),
             'start' => Yii::t('queue', 'Start'),
             'end' => Yii::t('queue', 'End'),
         ];
+    }
+
+    public function getMessage()
+    {
+        $message = new QueueMessage();
+        if ($this->id) {
+            $message->load(Queue::findOne(['id' => $this->id]));
+        }
+        return $message;
     }
 }
