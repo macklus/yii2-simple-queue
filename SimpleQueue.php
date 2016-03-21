@@ -2,16 +2,26 @@
 
 namespace macklus\SimpleQueue;
 
+<<<<<<< HEAD
 use Yii;
 use yii\base\InvalidConfigException;
 use yii\base\Component;
 use yii\queue\QueueInterface;
 use yii\helpers\Json;
 use yii\db\Expression;
+=======
+use yii\helpers\Json;
+use yii\base\Exception;
+use yii\db\Expression;
+use yii\base\Component;
+use yii\queue\QueueInterface;
+use macklus\SimpleQueue\models\Queue;
+>>>>>>> 16ddd46cd73126a8c6d010b549e3d6060642c38d
 
 class SimpleQueue extends Component implements QueueInterface
 {
 
+<<<<<<< HEAD
     const STATE_WAIT = 'WAIT';
     const STATE_READY = 'READY';
     const STATE_WORKING = 'WORKING';
@@ -86,6 +96,34 @@ class SimpleQueue extends Component implements QueueInterface
             'priority' => $priority,
         ];
         return $this->push($payload, $queue, $delay);
+=======
+    public $db;
+    public $queueTable;
+
+    public function putInTube($queue, $data = [], $delay = 0, $state = Queue::STATUS_READY, $priority = 0)
+    {
+        $payload = [
+            'data' => $data,
+            'state' => $state,
+            'priority' => $priority
+        ];
+        return $this->push($payload, $queue, $delay);
+    }
+
+    public function push($payload, $queue, $delay = 0)
+    {
+        $q = new Queue();
+        $q->queue = $queue;
+        $q->data = is_string($payload['data']) ? $payload['data'] : Json::encode($payload['data']);
+        $q->state = $payload['state'];
+        $q->priority = $payload['priority'];
+        $q->ready = ($delay != 0 ) ? new Expression('NOW() + INTERVAL :sec SECOND', ['sec' => $delay]) : new Expression('NOW()');
+        if ($q->save()) {
+            return $q->getMessage();
+        } else {
+            throw new Exception('Error saving object: ' . print_R($q->getErrors(), true));
+        }
+>>>>>>> 16ddd46cd73126a8c6d010b549e3d6060642c38d
     }
 
     public function delete(array $message)
@@ -100,6 +138,7 @@ class SimpleQueue extends Component implements QueueInterface
 
     public function purge($queue)
     {
+<<<<<<< HEAD
 
     }
 
@@ -115,6 +154,9 @@ class SimpleQueue extends Component implements QueueInterface
                     'start' => null,
                     'end' => null
                 ])->execute();
+=======
+        
+>>>>>>> 16ddd46cd73126a8c6d010b549e3d6060642c38d
     }
 
     public function release(array $message, $delay = 0)
