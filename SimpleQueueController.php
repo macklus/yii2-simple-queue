@@ -1,90 +1,86 @@
 <?php
 
-namespace macklus\SimpleQueue\controllers;
+namespace macklus\SimpleQueue;
 
 use Yii;
 use yii\console\Controller;
 use yii\helpers\Console;
-use macklus\SimpleQueue\models\Queue;
+
+//use macklus\SimpleQueue\SimpleQueue;
 
 class SimpleQueueController extends Controller
 {
 
+    const RELEASE = 'RELEASE';
+    const BURY = 'BURY';
+    const DELAY = 'DELAY';
+    const DELETE = 'DELETE';
+    const DELAY_PRIORITY = 0;
+    const DELAY_TIME = 3000;
+
     private $_tubeActions = [];
-    private $_willTerminate;
+    private $_willTerminate = false;
     private $_lasttimereconnect;
     private $_queue;
+    private $_inProgress;
+    private $_test;
 
     public function beforeAction($action)
     {
-        $this->_queue = new Queue;
+        $this->_queue = Yii::$app->queue;
         if ($action->id == "index") {
-            try {
-                $this->registerSignalHandler();
-                foreach ($this->getTubes() as $tube) {
-                    $methodName = 'action' . str_replace(' ', '', ucwords(implode(' ', explode('-', $tube))));
-                    if ($this->hasMethod($methodName)) {
-                        $this->_tubeActions[$tube] = $methodName;
-                        fwrite(STDOUT, Console::ansiFormat("Listening $tube tube.\n", [Console::FG_GREEN]));
-
-                        $bean = $this->_queue->watch($tube);
-                        if (!$bean) {
-                            fwrite(STDERR, Console::ansiFormat("Check beanstalkd!" . "\n", [Console::FG_RED]));
-                            return $this->end();
-                        }
-                    } else {
-                        fwrite(STDOUT, Console::ansiFormat("Not Listening {tube} tube since there is no action defined. {methodName}", ["tube" => $tube, "methodName" => $methodName] . "\n", [Console::FG_YELLOW]));
-                    }
+            $this->registerSignalHandler();
+            foreach ($this->getTubes() as $tube) {
+                $methodName = 'action' . str_replace(' ', '', ucwords(implode(' ', explode('-', $tube))));
+                if ($this->hasMethod($methodName)) {
+                    $this->_tubeActions[$tube] = $methodName;
+                    fwrite(STDOUT, Console::ansiFormat("Listening $tube tube.\n", [Console::FG_GREEN]));
+                    $this->_queue->watch($tube);
+                } else {
+                    fwrite(STDOUT, Console::ansiFormat("Not Listening {tube} tube since there is no action defined. {methodName}", ["tube" => $tube, "methodName" => $methodName] . "\n", [Console::FG_YELLOW]));
                 }
+            }
 
-                if (count($this->_tubeActions) == 0) {
-                    fwrite(STDERR, Console::ansiFormat("No tube found to listen!" . "\n", [Console::FG_RED]));
-                    return $this->end();
-                }
+            if (count($this->_tubeActions) == 0) {
+                fwrite(STDERR, Console::ansiFormat("No tube found to listen!" . "\n", [Console::FG_RED]));
+                return $this->end();
+            }
 
-                while (!$this->_willTerminate) {
-                    try {
-                        if ($this->_lasttimereconnect == null) {
-                            $this->_lasttimereconnect = time();
-                            $this->setDBSessionTimeout();
-                        }
-
-                        if (time() - $this->_lasttimereconnect > 86400) {
-                            $this->getDb()->close();
-                            $this->getDb()->open();
-                            Yii::info("Reconnecting to the DB");
-                            $this->setDBSessionTimeout();
-                            $this->_lasttimereconnect = time();
-                        }
-
-                        $job = $bean->reserve();
-                        if (!$job) {
-                            continue;
-                        }
-
-                        $jobStats = $bean->statsJob($job);
-                        $methodName = $this->getTubeAction($jobStats);
-
-                        if (!$methodName) {
-                            fwrite(STDERR, Console::ansiFormat("No method found for job's tube!" . "\n", [Console::FG_RED]));
-                            break;
-                        }
-                        $this->_inProgress = true;
-                        $this->executeJob($methodName, $job);
-                    } catch (Yii\db\Exception $e) {
-                        $this->decayJob($job);
-                        fwrite(STDERR, Console::ansiFormat($e->getMessage() . "\n", [Console::FG_RED]));
-                        fwrite(STDERR, Console::ansiFormat('DB Error job is decaying.' . "\n", [Console::FG_RED]));
-                    } catch (Yii\base\ErrorException $e) {
-                        fwrite(STDERR, Console::ansiFormat($e->getMessage() . "\n", [Console::FG_RED]));
+            while (!$this->_willTerminate) {
+                try {
+                    if ($this->_lasttimereconnect == null) {
+                        $this->_lasttimereconnect = time();
+                        $this->setDBSessionTimeout();
                     }
-                    $this->_inProgress = false;
-                    if (Yii::$app->beanstalk->sleep) {
-                        usleep(Yii::$app->beanstalk->sleep);
+
+                    if (time() - $this->_lasttimereconnect > 86400) {
+                        $this->getDb()->close();
+                        $this->getDb()->open();
+                        Yii::info("Reconnecting to the DB");
+                        $this->setDBSessionTimeout();
+                        $this->_lasttimereconnect = time();
                     }
+
+                    $job = $this->_queue->pop();
+                    if (!$job) {
+                        sleep(3);
+                        continue;
+                    }
+                    $methodName = $this->getTubeAction($job);
+
+                    if (!$methodName) {
+                        fwrite(STDERR, Console::ansiFormat("No method found for job's tube!" . "\n", [Console::FG_RED]));
+                        break;
+                    }
+                    $this->_inProgress = true;
+                    $this->executeJob($methodName, $job);
+                } catch (Yii\db\Exception $e) {
+                    $this->_queue->release([$job]);
+                    fwrite(STDERR, Console::ansiFormat($e->getMessage() . "\n", [Console::FG_RED]));
+                    fwrite(STDERR, Console::ansiFormat('DB Error job is decaying.' . "\n", [Console::FG_RED]));
+                } catch (Yii\base\ErrorException $e) {
+                    fwrite(STDERR, Console::ansiFormat($e->getMessage() . "\n", [Console::FG_RED]));
                 }
-            } catch (\Pheanstalk\Exception\ServerException $e) {
-                fwrite(STDERR, Console::ansiFormat($e . "\n", [Console::FG_RED]));
             }
             return $this->end();
         }
@@ -98,32 +94,19 @@ class SimpleQueueController extends Controller
      */
     protected function executeJob($methodName, $job)
     {
-        switch (call_user_func_array(
-                [ $this, $methodName], [ "job" => $job]
-        )
-        ) {
-            case self::NO_ACTION:
-                break;
+        switch (call_user_func_array([ $this, $methodName], [ "job" => $job])) {
             case self::RELEASE:
-                Yii::$app->beanstalk->release($job);
-                break;
-            case self::BURY:
-                Yii::$app->beanstalk->bury($job);
-                break;
-            case self::DECAY:
-                $this->decayJob($job);
+                $this->_queue->release([$job]);
                 break;
             case self::DELETE:
-                Yii::$app->beanstalk->delete($job);
+                $this->_queue->delete([$job]);
                 break;
             case self::DELAY:
-                Yii::$app->beanstalk->release($job, static::DELAY_PRIORITY, static::DELAY_TIME);
+                $this->_queue->delay([$job], static::DELAY_PRIORITY, static::DELAY_TIME);
                 break;
-            case self::DELAY_EXPONENTIAL:
-                $this->retryJobExponential($job);
-                break;
+            case self::BURY:
             default:
-                Yii::$app->beanstalk->bury($job);
+                $this->_queue->bury([$job]);
                 break;
         }
     }
@@ -158,7 +141,7 @@ class SimpleQueueController extends Controller
 
     public function signalHandler($signal)
     {
-        fwrite(STDOUT, Console::ansiFormat("Received signal {signal}.", ['signal' => $signal] . "\n", [Console::FG_YELLOW]));
+        fwrite(STDOUT, Console::ansiFormat("Received signal $signal.\n", [Console::FG_YELLOW]));
 
         switch ($signal) {
             case SIGTERM:
@@ -173,40 +156,13 @@ class SimpleQueueController extends Controller
                 break;
         }
     }
-    /*
-     * AQUI
-     * 
-     */
 
-    /**
-     * Controller specific tubes to listen if they do not exists.
-     * @return array Collection of tube names to listen.
-     */
-    /**
-     * Returns the matching action method for the job.
-     *
-     * @param object stats-job response from deamon.
-     * @return string Method name proper to yii2 matching to tube name
-     */
-//    public function getTubeAction($statsJob)
-//    {
-//
-//        return isset($this->_tubeActions[$statsJob->tube]) ? $this->_tubeActions[$statsJob->tube] : false;
-//    }
+    public function getTubeAction($statsJob)
+    {
 
-    /**
-     * Discovers tubes from deamon and merge them with user forced ones.
-     *
-     * @return array Collection of tube names.
-     */
-//    public function getDb()
-//    {
-//        return Yii::$app->db;
-//    }
+        return isset($this->_tubeActions[$statsJob->queue]) ? $this->_tubeActions[$statsJob->queue] : false;
+    }
 
-    /**
-     * {@inheritDoc}
-     */
     public function setDBSessionTimeout()
     {
         try {
@@ -216,9 +172,6 @@ class SimpleQueueController extends Controller
         }
     }
 
-    /**
-     *
-     */
     public function mysqlSessionTimeout()
     {
         try {
@@ -228,74 +181,19 @@ class SimpleQueueController extends Controller
             Yii::error("Mysql session.wait_timeout command did not succeeded.");
         }
     }
-    /**
-     * Decay a job with a fixed delay
-     *
-     * @param $job
-     */
-//    public function decayJob($job)
-//    {
-//        $jobStats = Yii::$app->beanstalk->statsJob($job);
-//        $delay_job = $jobStats->releases + $jobStats->delay + static::DELAY_TIME;
-//        if ($jobStats->releases >= static::DELAY_MAX) {
-//            Yii::$app->beanstalk->delete($job);
-//            fwrite(STDERR, Console::ansiFormat('Decaying Job Deleted!' . "\n", [Console::FG_RED]));
-//        } else {
-//            Yii::$app->beanstalk->release($job, static::DELAY_PRIORITY, $delay_job);
-//        }
-//    }
 
-    /**
-     * Retry a job using exponential back off delay strategy
-     *
-     * @param $job
-     */
-//    public function retryJobExponential($job)
-//    {
-//        $jobStats = Yii::$app->beanstalk->statsJob($job);
-//
-//        if ($jobStats->releases == static::DELAY_RETRIES) {
-//            Yii::$app->beanstalk->delete($job);
-//            fwrite(STDERR, Console::ansiFormat('Retrying Job Deleted on retry ' . $jobStats->releases . '!' . "\n", [Console::FG_RED]));
-//        } else {
-//            Yii::$app->beanstalk->release($job, static::DELAY_PRIORITY, (1 << $jobStats->releases) * 1 + rand(0, 1));
-//        }
-//    }
-
-    /**
-     * Terminate job
-     */
     public function terminate()
     {
         $this->_willTerminate = true;
     }
 
-    /**
-     * Start test mode
-     *
-     * @return bool
-     */
     public function setTestMode()
     {
         return $this->_test = true;
     }
 
-    /**
-     * End job
-     *
-     * @return bool|void
-     * @throws \yii\base\ExitException
-     */
     public function end()
     {
         return ($this->_test) ? false : Yii::$app->end();
     }
-    /**
-     * Setup job before action
-     *
-     * @param \yii\base\Action $action
-     *
-     * @return bool|void
-     * @throws \yii\base\InvalidConfigException
-     */
 }

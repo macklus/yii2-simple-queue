@@ -2,33 +2,28 @@
 
 namespace macklus\SimpleQueue;
 
-<<<<<<< HEAD
 use Yii;
 use yii\base\InvalidConfigException;
 use yii\base\Component;
 use yii\queue\QueueInterface;
 use yii\helpers\Json;
 use yii\db\Expression;
-=======
-use yii\helpers\Json;
-use yii\base\Exception;
-use yii\db\Expression;
-use yii\base\Component;
-use yii\queue\QueueInterface;
-use macklus\SimpleQueue\models\Queue;
->>>>>>> 16ddd46cd73126a8c6d010b549e3d6060642c38d
 
 class SimpleQueue extends Component implements QueueInterface
 {
 
-<<<<<<< HEAD
-    const STATE_WAIT = 'WAIT';
     const STATE_READY = 'READY';
+    const STATE_DELAYED = 'DELAYED';
+    const STATE_BURIED = 'BURIED';
     const STATE_WORKING = 'WORKING';
     const STATE_ENDED = 'ENDED';
 
     public $connection = 'db';
     public $table = '{{%queue}}';
+    public $wait = 3;
+    public $persistent = false;
+    public $duplicate_jobs = false;
+    public $queues = [];
 
     public function init()
     {
@@ -67,11 +62,11 @@ class SimpleQueue extends Component implements QueueInterface
             'id' => 'BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY',
             'queue' => 'VARCHAR(255) CHARSET utf8 COLLATE utf8_general_ci NOT NULL',
             'data' => 'TEXT CHARSET utf8 COLLATE utf8_general_ci NOT NULL',
-            'state' => 'ENUM("WAIT","READY","WORKING","ENDED") NOT NULL DEFAULT "WAIT"',
+            'state' => 'ENUM("READY","DELAYED","WORKING","ENDED","BURIED") NOT NULL DEFAULT "READY"',
             'priority' => 'INT NOT NULL DEFAULT 0',
             'ready' => 'TIMESTAMP NOT NULL',
-            'start' => 'TIMESTAMP',
-            'end' => 'TIMESTAMP'])->execute();
+            'start' => 'TIMESTAMP NULL DEFAULT NULL',
+            'end' => 'TIMESTAMP NULL DEFAULT NULL'])->execute();
         $this->connection->schema->refresh();
     }
 
@@ -80,10 +75,10 @@ class SimpleQueue extends Component implements QueueInterface
         $this->connection->createCommand()->dropTable($this->getTableName())->execute();
     }
 
-    public function putInTube($queue, $payload = [], $delay = 0, $priority = 0, $avoid_duplicate = false)
+    public function putInTube($queue, $payload = [], $delay = 0, $priority = 0)
     {
         // Search jobs with same queue and data to avoid duplicates
-        if ($avoid_duplicate) {
+        if (!$this->duplicate_jobs) {
             $command = $this->connection->createCommand('SELECT id FROM ' . $this->getTableName() . ' WHERE queue=:queue AND data =:payload')
                     ->BindValues(['queue' => $queue, 'payload' => Json::encode($payload)]);
             if ($command->queryOne()) {
@@ -91,55 +86,7 @@ class SimpleQueue extends Component implements QueueInterface
             }
         }
 
-        $payload = [
-            'data' => Json::encode($payload),
-            'priority' => $priority,
-        ];
-        return $this->push($payload, $queue, $delay);
-=======
-    public $db;
-    public $queueTable;
-
-    public function putInTube($queue, $data = [], $delay = 0, $state = Queue::STATUS_READY, $priority = 0)
-    {
-        $payload = [
-            'data' => $data,
-            'state' => $state,
-            'priority' => $priority
-        ];
-        return $this->push($payload, $queue, $delay);
-    }
-
-    public function push($payload, $queue, $delay = 0)
-    {
-        $q = new Queue();
-        $q->queue = $queue;
-        $q->data = is_string($payload['data']) ? $payload['data'] : Json::encode($payload['data']);
-        $q->state = $payload['state'];
-        $q->priority = $payload['priority'];
-        $q->ready = ($delay != 0 ) ? new Expression('NOW() + INTERVAL :sec SECOND', ['sec' => $delay]) : new Expression('NOW()');
-        if ($q->save()) {
-            return $q->getMessage();
-        } else {
-            throw new Exception('Error saving object: ' . print_R($q->getErrors(), true));
-        }
->>>>>>> 16ddd46cd73126a8c6d010b549e3d6060642c38d
-    }
-
-    public function delete(array $message)
-    {
-
-    }
-
-    public function pop($queue)
-    {
-        
-    }
-
-    public function purge($queue)
-    {
-<<<<<<< HEAD
-
+        return $this->push(['data' => Json::encode($payload), 'priority' => $priority], $queue, $delay);
     }
 
     public function push($payload, $queue, $delay = 0)
@@ -151,16 +98,77 @@ class SimpleQueue extends Component implements QueueInterface
                     'state' => self::STATE_READY,
                     'priority' => $payload['priority'],
                     'ready' => new Expression("DATE_ADD(NOW(), INTERVAL $delay SECOND)"),
-                    'start' => null,
-                    'end' => null
                 ])->execute();
-=======
-        
->>>>>>> 16ddd46cd73126a8c6d010b549e3d6060642c38d
     }
 
-    public function release(array $message, $delay = 0)
+    public function pop($queue = false)
     {
+        $transaction = $this->connection->beginTransaction();
+        try {
+            $data = $this->connection->createCommand('SELECT * FROM ' . $this->getTableName() . ' WHERE queue IN ("' . implode('","', $this->queues) . '") AND state IN ("READY","DELAYED") AND ready <= NOW() ORDER BY priority DESC;')->queryOne();
 
+            if ($data) {
+                $this->connection->createCommand('UPDATE ' . $this->getTableName() . ' SET state=:state, start=NOW() WHERE id=:id')
+                        ->BindValues(['state' => self::STATE_WORKING, 'id' => $data['id']])->execute();
+                $sqm = new SimpleQueueMessage();
+                $sqm->setAttributes($data);
+                $transaction->commit();
+                return $sqm;
+            }
+            $transaction->rollBack();
+            return false;
+        } catch (\Exception $e) {
+            $transaction->rollBack();
+            return false;
+        }
+    }
+
+    public function purge($queue)
+    {
+        return $this->connection->createCommand('DELETE FROM ' . $this->getTableName() . ' WHERE queue=:queue')->BindValues(['queue' => $queue])->execute();
+    }
+
+    public function delete(array $message)
+    {
+        foreach ($message as $m) {
+            if ($this->persistent) {
+                echo 'update';
+                $command = $this->connection->createCommand('UPDATE ' . $this->getTableName() . ' set state=:state,end=NOW() WHERE id=:id')
+                        ->BindValues(['state' => self::STATE_ENDED, 'id' => $m->id]);
+            } else {
+                $command = $this->connection->createCommand('DELETE FROM ' . $this->getTableName() . ' WHERE id=:id')->BindValues(['id' => $m->id]);
+            }
+            $command->execute();
+        }
+    }
+
+    public function release(array $message, $priority = 0, $delay = 0)
+    {
+        foreach ($message as $m) {
+            $this->connection->createCommand('UPDATE ' . $this->getTableName() . ' SET state=:state, priority=:priority,ready=DATE_ADD(NOW(), INTERVAL ' . $delay . ' SECOND) WHERE id=:id')
+                    ->BindValues(['state' => self::STATE_READY, 'priority' => $priority, 'id' => $m->id])->execute();
+        }
+    }
+
+    public function delay(array $message, $priority = 0, $delay = 0)
+    {
+        echo 'Delay de '.$priority;
+        foreach ($message as $m) {
+            $this->connection->createCommand('UPDATE ' . $this->getTableName() . ' SET state=:state, priority=:priority,ready=DATE_ADD(NOW(), INTERVAL ' . $delay . ' SECOND) WHERE id=:id')
+                    ->BindValues(['state' => self::STATE_DELAYED, 'priority' => $priority, 'id' => $m->id])->execute();
+        }
+    }
+
+    public function bury(array $message)
+    {
+        foreach ($message as $m) {
+            $this->connection->createCommand('UPDATE ' . $this->getTableName() . ' SET state=:state,end=NOW() WHERE id=:id')
+                    ->BindValues(['state' => self::STATE_BURIED, 'id' => $m->id])->execute();
+        }
+    }
+
+    public function watch($queue)
+    {
+        $this->queues[] = $queue;
     }
 }

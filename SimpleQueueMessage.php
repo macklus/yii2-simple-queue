@@ -2,27 +2,33 @@
 
 namespace macklus\SimpleQueue;
 
-class SimpleQueueMessage extends Component
+use yii\helpers\Json;
+
+class SimpleQueueMessage
 {
 
-    const STATUS_WAIT = Queue::STATUS_WAIT;
-    const STATUS_READY = Queue::STATUS_READY;
-    const STATUS_WORKING = Queue::STATUS_WORKING;
-    const STATUS_ENDED = Queue::STATUS_ENDED;
+    public $id;
+    public $queue;
+    public $data;
+    public $state;
+    public $priority;
+    public $ready;
+    public $start;
+    public $end;
+    public $_data = [];
 
-    public $id = false;
-    public $queue = false;
-    public $data = false;
-    public $state = false;
-    public $priority = false;
-    public $ready = false;
-    public $start = false;
-    public $end = false;
-
-    public function load($object)
+    public function setAttributes($data = [])
     {
-        foreach (['id', 'queue', 'data', 'state', 'priority', 'ready', 'start', 'end'] as $v) {
-            $this->$v = $object->$v ? $object->$v : false;
+        foreach (['id', 'queue', 'data', 'state', 'priority', 'ready', 'start', 'end'] as $key) {
+            if (isset($data[$key])) {
+                $this->$key = $data[$key];
+            }
+            $this->_data = Json::decode($this->data);
         }
+    }
+
+    public function getData()
+    {
+        return (object) $this->_data;
     }
 }
