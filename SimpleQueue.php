@@ -132,7 +132,6 @@ class SimpleQueue extends Component implements QueueInterface
     {
         foreach ($message as $m) {
             if ($this->persistent) {
-                echo 'update';
                 $command = $this->connection->createCommand('UPDATE ' . $this->getTableName() . ' set state=:state,end=NOW() WHERE id=:id')
                         ->BindValues(['state' => self::STATE_ENDED, 'id' => $m->id]);
             } else {
@@ -152,7 +151,6 @@ class SimpleQueue extends Component implements QueueInterface
 
     public function delay(array $message, $priority = 0, $delay = 0)
     {
-        echo 'Delay de '.$priority;
         foreach ($message as $m) {
             $this->connection->createCommand('UPDATE ' . $this->getTableName() . ' SET state=:state, priority=:priority,ready=DATE_ADD(NOW(), INTERVAL ' . $delay . ' SECOND) WHERE id=:id')
                     ->BindValues(['state' => self::STATE_DELAYED, 'priority' => $priority, 'id' => $m->id])->execute();
