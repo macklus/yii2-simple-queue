@@ -11,8 +11,10 @@
         }
     ],
     "require": {
-        "yiisoft/yii2": "*",
-	"yiisoft/yii2-queue": "dev-master"
+        "yiisoft/yii2": "*"
+    },
+    "require-dev": {
+		"yiisoft/yii2-queue": "*"
     },
     "autoload": {
         "psr-4": {
