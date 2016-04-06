@@ -13,9 +13,6 @@
     "require": {
         "yiisoft/yii2": "*"
     },
-    "require-dev": {
-		"yiisoft/yii2-queue": "*"
-    },
     "autoload": {
         "psr-4": {
             "macklus\\SimpleQueue\\": ""

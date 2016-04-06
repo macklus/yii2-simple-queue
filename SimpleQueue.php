@@ -5,11 +5,10 @@ namespace macklus\SimpleQueue;
 use Yii;
 use yii\base\InvalidConfigException;
 use yii\base\Component;
-use yii\queue\QueueInterface;
 use yii\helpers\Json;
 use yii\db\Expression;
 
-class SimpleQueue extends Component implements QueueInterface
+class SimpleQueue extends Component
 {
 
     const STATE_READY = 'READY';
@@ -152,7 +151,7 @@ class SimpleQueue extends Component implements QueueInterface
 
     public function delay(array $message, $priority = 0, $delay = 0)
     {
-        echo 'Delay de '.$priority;
+        echo 'Delay de ' . $priority;
         foreach ($message as $m) {
             $this->connection->createCommand('UPDATE ' . $this->getTableName() . ' SET state=:state, priority=:priority,ready=DATE_ADD(NOW(), INTERVAL ' . $delay . ' SECOND) WHERE id=:id')
                     ->BindValues(['state' => self::STATE_DELAYED, 'priority' => $priority, 'id' => $m->id])->execute();
