@@ -23,8 +23,8 @@ class SimpleQueueMessage
             if (isset($data[$key])) {
                 $this->$key = $data[$key];
             }
-            $this->_data = Json::decode($this->data);
         }
+        $this->_data = Json::decode($this->data);
     }
 
     public function getData()
