@@ -126,17 +126,28 @@ class SimpleQueueController extends Controller
         return array_unique(array_merge([], $this->listenTubes()));
     }
 
-    public function registerSignalHandler()
+	public function registerSignalHandler()
     {
         if (!extension_loaded('pcntl')) {
             fwrite(STDOUT, Console::ansiFormat("Warning: Process Control Extension is not loaded. Signal Handling Disabled! If process is interrupted, the reserved jobs will be hung. You may lose the job data." . "\n", [Console::FG_YELLOW]));
             return;
         }
+        if (!$this->funcIsEnabled('pcntl_signal')) {
+            fwrite(STDOUT, Console::ansiFormat("Warning: Function pcntl_signal is in php.ini disable_functions. Signal Handling Disabled! If process is interrupted, the reserved jobs will be hung. You may lose the job data." . "\n", [Console::FG_YELLOW]));
+            return;
+        }
         declare (ticks = 1);
         pcntl_signal(SIGTERM, [$this, 'signalHandler']);
         pcntl_signal(SIGINT, [$this, 'signalHandler']);
+
         fwrite(STDOUT, Console::ansiFormat("Process Control Extension is loaded. Signal Handling Registered!" . "\n", [Console::FG_GREEN]));
         return true;
+    }
+
+    public function funcIsEnabled($func)
+    {
+        $disabled = explode(',', ini_get('disable_functions'));
+        return !in_array($func, $disabled);
     }
 
     public function signalHandler($signal)
